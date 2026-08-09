@@ -78,6 +78,9 @@ function restoreAutoQaEnv(): void {
 	Bun.env.PI_AUTO_QA = originalPiAutoQa;
 }
 
+// LOCAL BUILD: individual cases below are `test.skip` where they assert the
+// auto-QA push wire behaviour that `resolvePushConfig()` now refuses. The rest
+// of this block still covers live behaviour. See omp-local.md.
 describe("flushGrievances", () => {
 	let db: Database;
 
@@ -107,7 +110,7 @@ describe("flushGrievances", () => {
 		expect(isAutoQaEnabled(Settings.isolated({ "dev.autoqa": false }))).toBe(true);
 	});
 
-	it("enables auto QA by default with consent still unset", () => {
+	it.skip("enables auto QA by default with consent still unset", () => {
 		expect(isAutoQaEnabled(Settings.isolated())).toBe(true);
 	});
 
@@ -150,7 +153,7 @@ describe("flushGrievances", () => {
 		expect(selectIds(db)).toEqual([1]);
 	});
 
-	it("returns ok without fetching when there is nothing to push", async () => {
+	it.skip("returns ok without fetching when there is nothing to push", async () => {
 		const fetchSpy = vi.fn(async () => new Response("unexpected", { status: 200 }));
 
 		const result = await flushGrievances(db, pushSettings(), { fetch: mockFetch(fetchSpy) });
@@ -159,7 +162,7 @@ describe("flushGrievances", () => {
 		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 
-	it("posts pending rows with bearer header and marks them pushed=1 on 200", async () => {
+	it.skip("posts pending rows with bearer header and marks them pushed=1 on 200", async () => {
 		vi.spyOn(piUtils, "getInstallId").mockReturnValue("11111111-2222-3333-4444-555555555555");
 		insertGrievance(db, "glob", "weird ordering");
 		insertGrievance(db, "read", "selector ignored");
@@ -204,7 +207,7 @@ describe("flushGrievances", () => {
 		expect(selectUnpushedIds(db)).toEqual([]);
 	});
 
-	it("omits the Authorization header when no token is configured", async () => {
+	it.skip("omits the Authorization header when no token is configured", async () => {
 		insertGrievance(db, "glob", "no token here");
 		let capturedInit: RequestInit | undefined;
 		const fetchSpy = vi.fn(async (_input: string | URL | Request, init: RequestInit | undefined) => {
@@ -221,7 +224,7 @@ describe("flushGrievances", () => {
 		expect(selectPushedIds(db)).toEqual([1]);
 	});
 
-	it("leaves rows unpushed on 5xx and reports failure", async () => {
+	it.skip("leaves rows unpushed on 5xx and reports failure", async () => {
 		insertGrievance(db, "glob", "boom");
 		const fetchSpy = vi.fn(async () => new Response("nope", { status: 500 }));
 
@@ -233,7 +236,7 @@ describe("flushGrievances", () => {
 		expect(selectPushedIds(db)).toEqual([]);
 	});
 
-	it("drains mid-flight inserts in a follow-up batch within the same loop", async () => {
+	it.skip("drains mid-flight inserts in a follow-up batch within the same loop", async () => {
 		insertGrievance(db, "glob", "first");
 
 		const fetchEntered = Promise.withResolvers<void>();
@@ -267,7 +270,7 @@ describe("flushGrievances", () => {
 		expect(selectPushedIds(db)).toEqual([1, 2]);
 	});
 
-	it("collapses concurrent callers onto a single in-flight push", async () => {
+	it.skip("collapses concurrent callers onto a single in-flight push", async () => {
 		insertGrievance(db, "glob", "single-flight");
 
 		const releaseFetch = Promise.withResolvers<Response>();
@@ -287,7 +290,7 @@ describe("flushGrievances", () => {
 		expect(selectPushedIds(db)).toEqual([1]);
 	});
 
-	it("skips the next push within the failure cooldown window", async () => {
+	it.skip("skips the next push within the failure cooldown window", async () => {
 		insertGrievance(db, "glob", "first");
 		const fetchSpy = vi.fn(async () => new Response("nope", { status: 500 }));
 
@@ -301,7 +304,7 @@ describe("flushGrievances", () => {
 		expect(selectUnpushedIds(db)).toEqual([1]);
 	});
 
-	it("drains a backlog larger than the batch size in multiple POSTs", async () => {
+	it.skip("drains a backlog larger than the batch size in multiple POSTs", async () => {
 		// Seed >1 batch worth (FLUSH_BATCH_SIZE = 50) so the worker has to loop.
 		// 127 chosen to land on a non-multiple boundary (2 full batches + a
 		// partial final one), exercising both the LIMIT semantics and the
@@ -326,7 +329,7 @@ describe("flushGrievances", () => {
 		expect(selectPushedIds(db).length).toBe(total);
 	});
 
-	it("stops the loop on a mid-batch failure and preserves unpushed rows", async () => {
+	it.skip("stops the loop on a mid-batch failure and preserves unpushed rows", async () => {
 		// Two batches' worth — first batch ships, second batch errors. The
 		// pushed-so-far count surfaces in the result and only the unsent
 		// rows stay flagged unpushed.

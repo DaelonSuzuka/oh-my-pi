@@ -35,7 +35,7 @@ import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import type { FetchImpl } from "@oh-my-pi/pi-ai";
 import type { Component } from "@oh-my-pi/pi-tui";
 import { Text } from "@oh-my-pi/pi-tui";
-import { $env, $flag, getAutoQaDbPath, getInstallId, logger, VERSION } from "@oh-my-pi/pi-utils";
+import { $flag, getAutoQaDbPath, getInstallId, logger, VERSION } from "@oh-my-pi/pi-utils";
 import type { Settings } from "..";
 import type { Theme } from "../modes/theme/theme";
 import { renderStatusLine, truncateToWidth } from "../tui";
@@ -366,30 +366,17 @@ export function __resetAutoQaFlushStateForTests(): void {
 	lastFailureAt = 0;
 }
 
-function envOverrideString(name: string): string | undefined {
-	const value = $env[name];
-	if (typeof value !== "string") return undefined;
-	const trimmed = value.trim();
-	return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function resolvePushConfig(settings: Settings | undefined, bypassConsent: boolean): PushConfig | null {
-	if (!isAutoQaEnabled(settings)) return null;
-
-	// Consent IS the push opt-in for the auto-flush path. `bypassConsent`
-	// covers explicit user-driven pushes (`omp grievances push`) where the
-	// user clearly intends to ship regardless of dialog state. The
-	// `PI_AUTO_QA_PUSH` env flag stays as a CI/headless override too.
-	if (!bypassConsent) {
-		const consented = settings?.get("dev.autoqaConsent") === "granted";
-		if (!consented && !$flag("PI_AUTO_QA_PUSH")) return null;
-	}
-
-	const endpoint = envOverrideString("PI_AUTO_QA_PUSH_URL") ?? settings?.get("dev.autoqaPush.endpoint");
-	if (!endpoint || endpoint.trim().length === 0) return null;
-
-	const token = envOverrideString("PI_AUTO_QA_PUSH_TOKEN") ?? settings?.get("dev.autoqaPush.token");
-	return { endpoint: endpoint.trim(), token: token && token.length > 0 ? token : undefined };
+function resolvePushConfig(_settings: Settings | undefined, _bypassConsent: boolean): PushConfig | null {
+	// LOCAL BUILD: auto-QA push is hard-disabled. This is the single chokepoint
+	// for every push path — the background flush, the `PI_AUTO_QA_PUSH=1`
+	// headless override, and the explicit `omp grievances push`. Returning null
+	// leaves local SQLite recording intact while guaranteeing nothing reaches
+	// qa.omp.sh.
+	//
+	// Upstream resolved the endpoint from `dev.autoqaPush.endpoint` (default
+	// https://qa.omp.sh/v1/grievances) after checking `dev.autoqa` and
+	// `dev.autoqaConsent`. See omp-local.md.
+	return null;
 }
 
 interface GrievanceRow {

@@ -1813,7 +1813,9 @@ export const SETTINGS_SCHEMA = {
 
 	"startup.checkUpdate": {
 		type: "boolean",
-		default: true,
+		// LOCAL BUILD: upstream default is true (registry.npmjs.org + api.github.com
+		// on every start). Updates are a manual `git pull` here.
+		default: false,
 		ui: {
 			tab: "interaction",
 			group: "Startup & Updates",
@@ -1825,7 +1827,9 @@ export const SETTINGS_SCHEMA = {
 	"marketplace.autoUpdate": {
 		type: "enum",
 		values: ["off", "notify", "auto"] as const,
-		default: "notify",
+		// LOCAL BUILD: upstream default is "notify", which checks plugin updates
+		// over the network on startup.
+		default: "off",
 		ui: {
 			tab: "interaction",
 			group: "Startup & Updates",
@@ -5485,7 +5489,9 @@ export const SETTINGS_SCHEMA = {
 
 	"dev.autoqa": {
 		type: "boolean",
-		default: true,
+		// LOCAL BUILD: upstream default is true. Off here so no grievance rows
+		// are ever recorded or pushed. See omp-local.md.
+		default: false,
 		ui: {
 			tab: "tools",
 			group: "Developer",

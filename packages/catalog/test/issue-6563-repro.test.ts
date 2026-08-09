@@ -49,7 +49,10 @@ function anthropicModelsResponse(): Response {
 }
 
 describe("issue #6563 — anthropic discovery base URL missing /v1", () => {
-	it("fetches /v1/models even when the registry passes a bare host base URL", async () => {
+	// LOCAL BUILD: skipped — fetchWellKnownModels() returns {} without fetching
+	// catalog.stencil.so, so the models.dev enrichment this asserts never happens.
+	// See omp-local.md.
+	it.skip("fetches /v1/models even when the registry passes a bare host base URL", async () => {
 		const requestedUrls: string[] = [];
 		const fetchMock = (async (input: string | URL | Request): Promise<Response> => {
 			const url = String(input instanceof Request ? input.url : input);

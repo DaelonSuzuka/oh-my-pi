@@ -106,7 +106,10 @@ describe("siliconflow built-in providers", () => {
 		});
 	});
 
-	test("dynamic discovery filters non-chat ids and hydrates metadata from stencil.so and bundled references", async () => {
+	// LOCAL BUILD: skipped — fetchWellKnownModels() returns {} without fetching
+	// catalog.stencil.so, so the models.dev enrichment this asserts never happens.
+	// See omp-local.md.
+	test.skip("dynamic discovery filters non-chat ids and hydrates metadata from stencil.so and bundled references", async () => {
 		const seen: { urls: string[]; authorization?: string } = { urls: [] };
 		const stubFetch: FetchImpl = async (input, init) => {
 			const url = String(input);
@@ -172,7 +175,10 @@ describe("siliconflow built-in providers", () => {
 		expect(seen.authorization).toBe("Bearer sk-test");
 	});
 
-	test("cn variant discovers against the China endpoint with cn stencil.so pricing", async () => {
+	// LOCAL BUILD: skipped — fetchWellKnownModels() returns {} without fetching
+	// catalog.stencil.so, so the models.dev enrichment this asserts never happens.
+	// See omp-local.md.
+	test.skip("cn variant discovers against the China endpoint with cn stencil.so pricing", async () => {
 		const seen: { urls: string[] } = { urls: [] };
 		const stubFetch: FetchImpl = async input => {
 			const url = String(input);

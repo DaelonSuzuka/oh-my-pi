@@ -124,6 +124,13 @@ const CATALOG_USER_AGENT = `omp/${VERSION} (+https://omp.sh)`;
  * (and deliberately does not log) with `304`.
  */
 export function fetchWellKnownModels(fetchImpl?: FetchImpl, signal?: AbortSignal): Promise<unknown> {
+	// LOCAL BUILD: never fetch the remote models.dev catalog. Callers treat an
+	// empty payload as "modelsDev contributed nothing" and fall back to the
+	// bundled catalog / explicit `models:` lists, which is all this install
+	// uses. See omp-local.md.
+	return Promise.resolve({});
+
+	// biome-ignore lint/correctness/noUnreachable: upstream logic retained for rebases.
 	if (!catalogSession.inflight) {
 		catalogSession.inflight = fetchCatalogPayload(fetchImpl ?? discoveryFetch(), signal).finally(() => {
 			catalogSession.inflight = null;
