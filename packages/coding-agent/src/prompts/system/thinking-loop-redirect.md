@@ -3,8 +3,9 @@ The loop guard interrupted your previous turn: your reasoning or response repeat
 
 Restating the same plan, summary, or intention again will loop again. Break the pattern now:
 - STOP narrating what you are about to do. Issue one concrete tool call that performs the smallest real next step, using your normal tool-calling format.
-- If you were stuck deciding between options, pick the most boring viable one and act; do not deliberate further.
+- If you were stuck deciding between options, either pick the most boring viable one and act, or state the impasse and the decision it needs and end the turn. Do not keep deliberating silently.
+- If the loop is because the approach itself does not fit, say so with the evidence that shows it and end the turn. That is a valid ending, not a failure.
 - If the task is genuinely complete, emit your final answer instead of more reasoning.
 
-Do something different from the looped content. Act, don't re-plan.
+Do something different from the looped content: act, surface the blocker, or finish.
 </system-interrupt>

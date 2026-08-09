@@ -655,7 +655,10 @@ describe("system prompt tool inventory", () => {
 		expect(text).toContain("- frontend-design: Frontend UI workflow");
 	});
 
-	it("omits the read-only scout delegation gate when scout is unavailable", async () => {
+	// LOCAL BUILD: skipped — the "Delegation gates" prose (including the read-only
+	// scout gate) was removed when the system prompt was partitioned into
+	// harness-mechanical vs operator-domain content. See omp-local.md.
+	it.skip("omits the read-only scout delegation gate when scout is unavailable", async () => {
 		const opts = { toolNames: ["read", "bash", "task"], tools: TOOLS };
 		const withScout = (
 			await buildSystemPrompt({
