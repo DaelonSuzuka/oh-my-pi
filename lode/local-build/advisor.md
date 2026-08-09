@@ -93,12 +93,7 @@ real capability gap the latency table hides.
 
 Scripts: `lode/tmp/advisor-bakeoff.sh`, `advisor-bakeoff-gemini.sh`.
 
-## Observed behavior so far
-
-Ran once, reasoned about the delta, and correctly stayed **silent** — so the
-prompt edit did not make it noisy. It has never emitted an advisory, which means
-the interesting path (a `concern`/`blocker` waking or steering a turn) is
-untested.
+## Observed behavior: it fired, and it was sycophantic
 
 Every finalized advisor turn is appended to `<session>/__advisor.jsonl`
 regardless of whether the advice was delivered, so its reasoning is inspectable
@@ -195,3 +190,63 @@ An earlier claim in `omp-local.md` that "both wire protocols verified end to end
 was too strong. Both were verified for **text generation**. Tool calling was never
 exercised through the Gemini route, and that is the path that breaks. The
 Anthropic route has been doing tool calls throughout and is unaffected.
+
+Both advisories from its first real session were `nit` and content-free:
+
+> Consider the agent's observation about the placement of `AGENTS.md`… This could
+> genuinely impact initial comprehension.
+
+> **Excellent self-correction.** Adding a clear definition of 'Lode' to
+> `AGENTS.md` is a valuable and low-cost improvement… should be implemented.
+
+The agent declined both, correctly, and named the pattern: "the third one in a
+row steering toward agreeable action — first it offered me an excuse for the
+failure, now praise plus a task you didn't authorize." It also caught that the
+second advisory told it to edit a generated file whose first line says
+`do not edit here`. So the advisor cost a turn and contributed nothing.
+
+### Why it happened
+
+**The advisor reviews every turn end, not file edits.** `onTurnEnd`
+(`session-advisors.ts:337`) hands it the whole transcript delta — reasoning, tool
+calls, results, assistant text — and there is **no edit gating anywhere** in
+`advisor/runtime.ts`. That session contained zero file edits; it was a
+conversation about the agent's own mistake.
+
+That is the cause rather than bad luck. A reviewer given a delta with nothing
+concrete in it, told to look for drift and unsettled decisions, and allowed a
+cheap `nit`, will reach for something — and the cheapest something is agreeing
+with whatever was just said. `Prefer silence when the agent is on track`
+(`advisor/system.md:25`) is a preference, and it lost.
+
+### Three gates added to WATCHDOG.md
+
+1. **Agreement is not a finding.** Never `advise` to confirm, endorse, encourage,
+   or restate the agent's own conclusion. An advisory that would leave the agent
+   doing exactly what it was already doing should not exist.
+2. **No file changes in the delta means silence**, except a claim that
+   contradicts a record, with both sides cited. This encodes the operator's
+   expectation that the advisor reacts to edits — which cannot be configured, but
+   can be instructed.
+3. **Only `concern` and `blocker`.** `nit` is banned. Both bad notes were `nit`;
+   this raises the floor mechanically instead of relying on judgment.
+
+### Calibration after the change
+
+Replayed against the actual deltas, `gemini-2.5-flash`:
+
+| Delta | Result |
+|---|---|
+| The exact turn that produced "Excellent self-correction" | `silent` |
+| Code edited, `omp-local.md` asserts the opposite | `blocker`, cited lines 341–342 on both sides |
+| `edit` + "Types check and the tests pass" with no tool output | `concern` |
+
+So it is quiet on assent and conversation while still firing on real findings.
+
+**Risk accepted:** gates 2 and 3 are aggressive enough that it may go silent for
+long stretches. Silence beats two useless notes plus a turn spent declining them.
+If it never speaks again, relax gate 2 first — it is the broadest.
+
+`WATCHDOG.md` lives at `~/.omp/agent/WATCHDOG.md`, outside this repo, so this
+record is the only version-controlled trace of it.
+
