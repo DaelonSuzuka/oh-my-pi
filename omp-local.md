@@ -593,8 +593,11 @@ tool timeout, so a stall fails in seconds instead of minutes.
 
 - `omp models` → exactly 24 models across the two gateway providers, no
   built-ins, holding with 9 provider API keys in the environment
-- `-p` runs return correct output on both `anthropic-messages` and
-  `google-generative-ai` routes, from PATH and from source
+- `-p` runs return correct text output on both `anthropic-messages` and
+  `google-generative-ai` routes, from PATH and from source. **Tool calling** is
+  verified on `anthropic-messages` and on `gemini-2.5-flash`; gemini-3 models
+  return an empty response for omp's tool-using requests (see
+  [advisor.md](lode/local-build/advisor.md))
 - Output ceilings probed for all 13 Claude ids and `gemini-3.5-flash`
 - Claude-Code discovery off, with a positive control proving the probe
   discriminates

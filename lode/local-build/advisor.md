@@ -14,7 +14,7 @@ Full mechanics: `docs/advisor-watchdog.md`.
 | Setting | Value | Note |
 |---|---|---|
 | `advisor.enabled` | `true` | Upstream default is `false` |
-| `modelRoles.advisor` | `genai-gemini/gemini-3.1-flash-lite` | Chosen on measurement, below |
+| `modelRoles.advisor` | `genai-gemini/gemini-2.5-flash` | `gemini-3.1-flash-lite` was faster but **cannot make tool calls** through this bridge — see below |
 | `advisor.syncBacklog` | `1` | Primary waits up to 30s for catch-up, so advice lands with the turn rather than after it |
 | `advisor.subagents` | `false` | Upstream default |
 | `advisor.immuneTurns` | `1` | Was `3`; drift is a recurring invariant, not a smell to stop nagging about |
@@ -141,3 +141,57 @@ time. Independent judgment catching the operator is the feature.
 
 Scripts: `lode/tmp/advisor-bakeoff.sh`, `advisor-bakeoff-gemini.sh`,
 `advisor-finding-quality.sh`.
+
+## Gemini tool calling: one bug fixed, one open
+
+The advisor died on its first real session:
+
+```
+advisor: Advisor unavailable for genai-gemini/gemini-3.1-flash-lite:
+Google API error (400): Failed to parse request: proto: (line 1:214): unknown field "id"
+```
+
+**Fixed: `id` on function parts.** omp emitted
+`{"functionCall":{"name":"glob","args":{…},"id":"fuzhqbaz"}}`. `id` is a newer
+field the bridge's Vertex proto rejects. Upstream already knew this and stripped
+it — but keyed on `model.provider === "google-vertex"` (`google-shared.ts:274`,
+`:332`), and our provider is `genai-gemini`, so the strip never fired. The bridge
+routes Gemini to Vertex (`*-aiplatform.googleapis.com`), so we got Vertex's
+validation with none of Vertex's compensations.
+
+`supportsFunctionPartId()` is now widened to return false for any model whose
+`baseUrl` is not `generativelanguage.googleapis.com`. Keyed on the **endpoint**
+rather than a provider name, so it holds for any gateway and does not require
+renaming our provider to `google-vertex`.
+
+**Still open: gemini-3 models return an empty response for omp's tool-using
+requests.** After the `id` fix, `gemini-3.1-flash-lite` gets
+`empty response (finishReason STOP with no content)` and burns its retry budget.
+`gemini-2.5-flash` works, which is why it is the configured advisor.
+
+Ruled out by direct probes against the bridge — **do not redo these**, every one
+of these shapes works for `gemini-3.1-flash-lite`:
+
+| Probe | Result |
+|---|---|
+| plain text, no tools | works (via omp too) |
+| `tools` declared, first turn | works |
+| full `functionCall` → `functionResponse` round-trip | works, returns correct answer |
+| `:generateContent` vs `:streamGenerateContent?alt=sse` | both work |
+| `thinkingConfig` absent / `-1` / explicit budget | all three work |
+| `thoughtSignature` omitted | **400 — it is required.** omp sends the `skip_thought_signature_validator` sentinel correctly |
+
+So it is something in omp's *full* payload — its system instruction, eleven tool
+schemas, or the advisor's specific message sequence — not a simple shape problem.
+
+Next step if picked up: omp only persists raw requests on HTTP 400
+(`~/.omp/logs/http-400-requests/`), so an empty-response case is not captured.
+Logging the outgoing request on the empty-response path is the prerequisite for
+bisecting further; guessing has been exhausted.
+
+### Correction
+
+An earlier claim in `omp-local.md` that "both wire protocols verified end to end"
+was too strong. Both were verified for **text generation**. Tool calling was never
+exercised through the Gemini route, and that is the path that breaks. The
+Anthropic route has been doing tool calls throughout and is unaffected.

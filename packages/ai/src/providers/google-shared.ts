@@ -143,8 +143,41 @@ function resolveThoughtSignature(isSameProviderAndModel: boolean, signature: str
 	return isSameProviderAndModel && isValidThoughtSignature(signature) ? signature : undefined;
 }
 
+/**
+ * Host of the official generative-language endpoint. `id` on function parts is
+ * only known-safe there.
+ */
+const OFFICIAL_GENERATIVE_LANGUAGE_HOST = "generativelanguage.googleapis.com";
+
+/**
+ * LOCAL BUILD: whether `model` talks to something other than Google's official
+ * generative-language endpoint.
+ *
+ * A configured `baseUrl` means a proxy or gateway, and we cannot know what it
+ * fronts. Ours fronts Vertex, whose GenerateContent proto rejects `id` on
+ * function parts with `400 Failed to parse request: unknown field "id"` — which
+ * fires on the *first tool call*, so plain text generation looks fine and any
+ * tool-using session dies immediately.
+ */
+function isNonOfficialGoogleEndpoint(baseUrl: string | undefined): boolean {
+	const trimmed = baseUrl?.trim();
+	if (!trimmed) return false;
+	try {
+		return new URL(trimmed).hostname !== OFFICIAL_GENERATIVE_LANGUAGE_HOST;
+	} catch {
+		// Unparseable baseUrl is still not the official endpoint.
+		return true;
+	}
+}
+
 function supportsFunctionPartId<T extends GoogleApiType>(model: Model<T>): boolean {
 	if (model.api === "google-vertex") return false;
+	// LOCAL BUILD: widened from the `google-vertex` api check below. That check
+	// only catches models declared against the Vertex api; a custom provider on
+	// the `google-generative-ai` api pointed at a Vertex-backed gateway slipped
+	// through and emitted `id`. Keyed on the endpoint rather than the provider
+	// name so it holds for any gateway, not just ours.
+	if (isNonOfficialGoogleEndpoint(model.baseUrl)) return false;
 	return model.id.startsWith("claude-") || (model.api === "google-generative-ai" && isGemini3Model(model.id));
 }
 
