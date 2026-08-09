@@ -109,10 +109,26 @@ export async function loadAllMCPConfigs(cwd: string, options?: LoadMCPConfigsOpt
 		readEnabledServers(userPath).then(list => new Set(list)),
 	]);
 
+	// LOCAL BUILD: MCP servers are accepted only from OMP-native sources.
+	//
+	// Upstream imports MCP servers from other tools' configs — Claude Code
+	// (including its plugin marketplace), Cursor, VS Code, Codex, Gemini CLI,
+	// opencode, Windsurf. That import is NOT gated by `disabledProviders`, and it
+	// does not honor the foreign tool's own disable list: two servers already
+	// switched off in Claude Code's `disabledMcpServers` were being loaded here,
+	// and one was contacted over the network on every run.
+	//
+	// A name-based `disabledServers` denylist only fixes servers you already know
+	// about; anything installed in another tool later appears silently. This
+	// allowlist is the wholesale switch. See omp-local.md.
+	const NATIVE_MCP_PROVIDERS = new Set(["mcp-json", "native", "omp-plugins", "agent-plugins"]);
+
 	// Scope exclusions drop entries entirely BEFORE deduplication: with project
 	// config disabled, a project entry must not shadow anything.
-	const includeServer = (server: MCPServer & { _source: SourceMeta }): boolean =>
-		enableProjectConfig || server._source.level !== "project";
+	const includeServer = (server: MCPServer & { _source: SourceMeta }): boolean => {
+		if (!NATIVE_MCP_PROVIDERS.has(server._source.provider)) return false;
+		return enableProjectConfig || server._source.level !== "project";
+	};
 
 	// Disabled servers are suppressed rather than dropped: they still own their
 	// name at key-level dedupe (a disabled project `foo` keeps a same-named,
