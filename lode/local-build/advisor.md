@@ -15,9 +15,9 @@ Full mechanics: `docs/advisor-watchdog.md`.
 |---|---|---|
 | `advisor.enabled` | `true` | Upstream default is `false` |
 | `modelRoles.advisor` | `genai-gemini/gemini-3.1-flash-lite` | Chosen on measurement, below |
-| `advisor.syncBacklog` | `off` | Was `1`; dropped so it cannot add turn latency |
+| `advisor.syncBacklog` | `1` | Primary waits up to 30s for catch-up, so advice lands with the turn rather than after it |
 | `advisor.subagents` | `false` | Upstream default |
-| `advisor.immuneTurns` | `3` | Upstream default |
+| `advisor.immuneTurns` | `1` | Was `3`; drift is a recurring invariant, not a smell to stop nagging about |
 | `~/.omp/agent/WATCHDOG.md` | present | Review priorities aligned to operator doctrine |
 
 ## Why its prompt was partitioned, and why the rule inverts here
@@ -103,3 +103,41 @@ untested.
 Every finalized advisor turn is appended to `<session>/__advisor.jsonl`
 regardless of whether the advice was delivered, so its reasoning is inspectable
 after the fact.
+
+## Note shape: short beats structured
+
+`WATCHDOG.md` asks for a comparison — "the diff touches X and Y, but `lode/` only
+mentions Z" — and explicitly forbids a rationale section or a prescribed remedy.
+That is a correction, not the first draft.
+
+The first draft specified a six-part finding (artifact, what changed, stale vs
+contradictory, both citations, why it matters, located remedy). Tested against
+this repo's own advisor-prompt-vs-stale-docs case:
+
+| Model | Time | Tokens | Result |
+|---|---|---|---|
+| gemini-3.1-flash-lite | 2.1s | 115 | ~4 of 6 parts, accurate |
+| gemini-2.5-flash | 4.0s | 23 | truncated mid-sentence, unusable |
+| haiku-4-5 | 4.6s | 372 | **confabulated** the "why it matters"; self-contradicted (`blocker` + "STALE") |
+| sonnet-5 | 6.5s | 367 | all six parts, compact, correct |
+| opus-5 | 10.3s | 630 | best judgment; disagreed on the severity call and was right |
+
+The lesson is haiku's row: **a spec with six slots invites a weaker model to fill
+the ones it cannot derive.** Structure imported the failure it was meant to
+prevent.
+
+With the short spec, `flash-lite` produced the target shape in **1.07s / 61
+tokens**, citing `omp-local.md:359` and quoting the stale claim, with no invented
+reasoning. So the model requirement dropped when the spec got smaller — the
+opposite of the usual direction, and the reason `flash-lite` stayed rather than
+being replaced by sonnet-5.
+
+Worth keeping in view: opus-5 argued the case was STALE rather than CONTRADICTORY
+because the sweep tally was "a count taken against a prior version" rather than
+an opposite assertion, and it identified the real hazard — line 361 heads "Sweep
+results — do not redo these", so a stale tally there is an instruction to skip
+re-verification. That reading was better than the one recorded in this lode at the
+time. Independent judgment catching the operator is the feature.
+
+Scripts: `lode/tmp/advisor-bakeoff.sh`, `advisor-bakeoff-gemini.sh`,
+`advisor-finding-quality.sh`.
