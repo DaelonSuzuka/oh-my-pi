@@ -1,0 +1,4 @@
+- [ ] Check whether `dev.autoqaConsent` dialog still fires now that push is dead (cosmetic, but confusing if it asks)
+- [ ] `packages/catalog/src/discovery/` probes localhost engines — harmless but confirm it stays local after upstream pulls
+- [ ] Consider pinning `bun.lock` via a local git filter so the npm.apple.com rewrite stops appearing
+- [ ] Probe whether haiku-4-5's reported 200k output ceiling is real or a bridge artifact
