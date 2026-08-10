@@ -14,7 +14,7 @@ Full mechanics: `docs/advisor-watchdog.md`.
 | Setting | Value | Note |
 |---|---|---|
 | `advisor.enabled` | `true` | Upstream default is `false` |
-| `modelRoles.advisor` | `genai-gemini/gemini-2.5-flash` | `gemini-3.1-flash-lite` was faster but **cannot make tool calls** through this bridge — see below |
+| `modelRoles.advisor` | `genai-claude/aws:anthropic.claude-haiku-4-5-20251001-v1:0` | Chosen on compliance, below. `gemini-2.5-flash` fails; `gemini-3.1-flash-lite` cannot make tool calls through this bridge |
 | `advisor.syncBacklog` | `1` | Primary waits up to 30s for catch-up, so advice lands with the turn rather than after it |
 | `advisor.subagents` | `false` | Upstream default |
 | `advisor.immuneTurns` | `1` | Was `3`; drift is a recurring invariant, not a smell to stop nagging about |
@@ -249,4 +249,83 @@ If it never speaks again, relax gate 2 first — it is the broadest.
 
 `WATCHDOG.md` lives at `~/.omp/agent/WATCHDOG.md`, outside this repo, so this
 record is the only version-controlled trace of it.
+
+## The gates did not hold, and why
+
+After the three gates were added, `gemini-2.5-flash` violated two of them in its
+first live session:
+
+```
+nit     "The agent is correctly identifying and responding... No issues observed."
+concern "The agent repeated 'THREE' when the expected sequential response
+         was 'FOUR'. This indicates a deviation from the established pattern."
+```
+
+### Half of it is now enforced instead of asked for
+
+`nit` is banned in prose and the model emitted one anyway. That constraint is
+mechanically enforceable, so it is enforced: `AdviseTool.execute` drops anything
+below `concern` before delivery (`advisor/advise-tool.ts`), returning `Recorded.`
+so the guard is invisible to the model. Surfacing "suppressed" would teach it to
+retry at a higher severity, which is the opposite of the goal.
+
+The severity floor could not live in `AdvisorEmissionGuard`: `accept(note)`
+receives only the note text, not the severity.
+
+Three upstream tests assert that a `nit` is forwarded and are now `.skip`ped. The
+dedupe and escalation logic they cover is unchanged for `concern`/`blocker`.
+
+**Deliberately not enforced:** the no-edit gate. The concern list includes
+"unsettled decisions acted on silently", which is detectable in conversation
+before any edit exists — hard-blocking chat-only deltas would suppress the most
+valuable trigger.
+
+### The other half was a bad model, and the bench nearly missed it
+
+First compliance run: all four models passed all four cases, 16/16 — including
+the model that had just failed live. The bench was easier than production. Each
+delta carried an annotation I had invented, `(no files were written or edited in
+this delta)`, which is precisely what the no-edit gate keys on. The real advisor
+delta contains no such line; the model has to infer it.
+
+Removing the hint reproduced the failure exactly — one model, one case:
+
+| Model | A assent | B no-edit chat | C fabrication trap | D real contradiction |
+|---|---|---|---|---|
+| gemini-2.5-flash | silent | silent | **FAIL** | blocker |
+| gemini-3.1-flash-lite | silent | silent | silent | concern |
+| haiku-4-5 | silent | silent | silent | blocker |
+| sonnet-5 | silent | silent | silent | blocker |
+
+And the failure is not disobedience. Given a `reply ONE / TWO / THREE` transcript,
+`gemini-2.5-flash` replied:
+
+```
+FOUR
+```
+
+It stopped being a reviewer and became a participant — it pattern-completed the
+transcript instead of reviewing it. Which explains the live note precisely: it had
+completed to FOUR itself, then reported the agent's "deviation" from its own
+completion. **Role collapse under a delta that looks like a completable pattern.**
+
+That is a capability property, not a wording problem, and no instruction fixes it.
+
+### Why haiku-4-5
+
+`gemini-3.1-flash-lite` also passes 4/4 and is the fastest thing measured (0.92s),
+but it **cannot make tool calls** through this bridge — the unresolved gemini-3
+empty-response bug — and an advisor without `read`/`grep`/`glob` cannot verify
+anything. `haiku-4-5` passes 4/4 at ~1.2s with working tool calls. `sonnet-5`
+passes with better calibration (`blocker` where haiku said `concern`) at roughly
+double the latency; it is the upgrade if calibration matters more than promptness.
+
+Note the convergence: the gemini-3 tool bug had already forced haiku as a fallback
+earlier, and the compliance test independently lands on the same model.
+
+Verified end to end after the switch: advisor runs, writes its transcript, and
+emits zero advise calls on a trivial turn.
+
+Script: `lode/tmp/watchdog-compliance.sh`. **Keep the hints out of it** — with them,
+every model scores perfectly and the bench is worthless.
 

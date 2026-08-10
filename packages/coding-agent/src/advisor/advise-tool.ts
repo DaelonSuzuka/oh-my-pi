@@ -206,6 +206,23 @@ export class AdviseTool implements AgentTool<typeof adviseSchema, AdviseDetails>
 		_onUpdate?: AgentToolUpdateCallback<AdviseDetails>,
 		_context?: AgentToolContext,
 	): Promise<AgentToolResult<AdviseDetails>> {
+		// LOCAL BUILD: severity floor. WATCHDOG.md instructs "only `concern` and
+		// `blocker` exist; do not emit `nit`", and the model emitted one anyway —
+		// "The agent is correctly identifying and responding to the user's
+		// sequential requests. No issues observed." A negative constraint in prose
+		// did not hold, and this one is mechanically enforceable, so it is enforced
+		// here instead of asked for.
+		//
+		// Suppressed the same way as the in-progress path below: return "Recorded."
+		// so the guard is invisible to the model. Surfacing "suppressed" would
+		// teach it to retry at a higher severity, which is the opposite of the goal.
+		if (!isInterruptingSeverity(args.severity)) {
+			return {
+				content: [{ type: "text", text: "Recorded." }],
+				details: { note: args.note, severity: args.severity },
+				useless: true,
+			};
+		}
 		if (this.#inProgressUpdate && args.severity !== "blocker") {
 			return {
 				content: [{ type: "text", text: "Recorded." }],
