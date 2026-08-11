@@ -14,6 +14,7 @@ index, the open work, and the rebase procedure.
 | [local-build/hooks.md](local-build/hooks.md) | The two omp hooks: lode-at-new-conversation and per-turn clock, with the seams that failed first |
 | [local-build/advisor.md](local-build/advisor.md) | Advisor config, why its prompt was partitioned, and the model bake-off |
 | [local-build/conditional-injections.md](local-build/conditional-injections.md) | The 25 runtime-injected prompt fragments, their triggers, and which ones matter |
+| [local-build/omp-config.md](local-build/omp-config.md) | Reference copies of the hand-written files in `~/.omp/agent/` |
 | [tmp/](tmp/) | Session scraps, gitignored |
 
 ## External

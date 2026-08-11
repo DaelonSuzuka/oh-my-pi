@@ -247,8 +247,9 @@ So it is quiet on assent and conversation while still firing on real findings.
 long stretches. Silence beats two useless notes plus a turn spent declining them.
 If it never speaks again, relax gate 2 first — it is the broadest.
 
-`WATCHDOG.md` lives at `~/.omp/agent/WATCHDOG.md`, outside this repo, so this
-record is the only version-controlled trace of it.
+`WATCHDOG.md` lives at `~/.omp/agent/WATCHDOG.md`, outside this repo. A verbatim
+copy is in [`omp-config.md`](omp-config.md); this record is why it says what it
+says.
 
 ## The gates did not hold, and why
 
