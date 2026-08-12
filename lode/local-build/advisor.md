@@ -330,3 +330,20 @@ emits zero advise calls on a trivial turn.
 Script: `lode/tmp/watchdog-compliance.sh`. **Keep the hints out of it** — with them,
 every model scores perfectly and the bench is worthless.
 
+## A config change does not reach a running process
+
+`modelRoles.advisor` is re-resolved on every `#buildAdvisorRuntime`, but from
+`this.#host.settings.get(...)` — the in-memory `Settings` built at process launch.
+`settings.ts` has no file watcher and no command reloads it, so an
+`omp config set` reaches only processes started afterward.
+
+`/advisor` off/on therefore does **not** pick up a model change: the rebuild
+faithfully reconstructs the old advisor. `docs/advisor-watchdog.md` lists
+"`/advisor` rebuilds it" and "configuration is reloaded" as separate triggers for
+exactly this reason, and nothing exposes the second one. Restart the process.
+
+Observed: after the switch to `haiku-4-5`, long-running sessions kept emitting
+failures from whichever model was configured at *their* launch — the
+`400 unknown field "id"` from `gemini-3.1-flash-lite` and the role-collapse from
+`gemini-2.5-flash` — both already fixed on disk.
+

@@ -50,7 +50,7 @@ Keeping it in `config.yml` is also deliberate: it stays in force when
 `models.yml` fails to parse, which is exactly when custom providers are dropped
 and the built-ins would otherwise be all that is left.
 
-Two behaviours of `config.yml` to know:
+Three behaviours of `config.yml` to know:
 
 - `omp` migrates a hand-written `settings.json` into `config.yml` on first run
   and renames the original to `settings.json.bak`. Editing the `.bak` does
@@ -61,6 +61,36 @@ Two behaviours of `config.yml` to know:
   unsafe — it moved `disabledProviders` out of last position and an append landed
   after `setupVersion:`, producing invalid YAML that omp quarantined to
   `config.yml.broken-*`. Prefer `omp config set` over hand-editing.
+- **A running process never sees a config change.** See below.
+
+### Config changes require a process restart
+
+`settings.ts` has no file watcher, and there is no `/reload` for settings (only
+`/reload-plugins` and `mm reload`). A running omp process holds the in-memory
+`Settings` it built at launch and never re-reads `config.yml`. So every
+`omp config set` affects **processes started afterward, and nothing already
+running**.
+
+`/new` does not help — the settings object outlives the conversation. Neither
+does `/advisor` off/on: `#buildAdvisorRuntime` genuinely re-resolves the advisor
+model, but from `this.#host.settings.get(...)`, so it faithfully reconstructs the
+*old* advisor. `docs/advisor-watchdog.md` lists "`/advisor` rebuilds it" and
+"configuration is reloaded" as separate triggers precisely because only the latter
+picks up a disk edit — and no command exposes it. **Restart the process.**
+
+This bit for real: after the advisor model was switched, long-running sessions kept
+producing failures from whichever model was configured at *their* launch — the
+`400 unknown field "id"` from `gemini-3.1-flash-lite`, or the role-collapse from
+`gemini-2.5-flash`. Both were already fixed on disk.
+
+Everything set via `omp config set` is subject to this: the advisor model,
+`disabledProviders` (including the Claude-Code skills fix), `personality`,
+`advisor.immuneTurns`, `advisor.syncBacklog`. Hooks under
+`~/.omp/agent/hooks/pre/` are also loaded per process, so an edited hook needs the
+same restart.
+
+The practical rule: **verify a config change in a freshly launched process.** A
+change that appears not to work is more likely an old process than a wrong value.
 
 ## Outbound reporting disabled
 

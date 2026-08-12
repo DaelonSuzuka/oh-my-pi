@@ -4,6 +4,13 @@ Upstream `oh-my-pi` is active (v17.2.12 at fork point, frequent releases). The
 telemetry patches are five small edits across three files and are easy to lose
 silently. Run this after every `git pull` / rebase onto upstream.
 
+> **Run every check in a freshly launched process.** `settings.ts` has no file
+> watcher and there is no `/reload` for settings, so a running omp holds the
+> in-memory `Settings` it built at launch. `/new` does not help, and neither does
+> `/advisor` off/on — that rebuild re-resolves from the same stale object. A check
+> that fails against a long-running process tells you nothing. Same for hooks under
+> `~/.omp/agent/hooks/pre/`: loaded per process.
+
 ## 1. The two hard returns still return
 
 `resolvePushConfig()` returns `null` with its body deleted;
