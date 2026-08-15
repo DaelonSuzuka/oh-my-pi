@@ -2,3 +2,10 @@
 - [ ] `packages/catalog/src/discovery/` probes localhost engines — harmless but confirm it stays local after upstream pulls
 - [ ] Consider pinning `bun.lock` via a local git filter so the npm.apple.com rewrite stops appearing
 - [ ] Probe whether haiku-4-5's reported 200k output ceiling is real or a bridge artifact
+
+- [ ] Evaluate persistent worker sessions or the current successor to retired `vibe_*` tools for conversational parallel work
+- [ ] Check whether repository security scan/publish capability still exists and evaluate it for project review
+- [ ] Compare the Mnemopi memory backend with Lode rather than assuming either mechanism should replace the other
+- [ ] Evaluate managed/autolearn skills for recurring Lode and project workflows
+- [ ] Check whether image generation still exists and identify any real development use
+- [ ] Evaluate computer-use tooling for bounded desktop operations when native APIs are unavailable
