@@ -162,6 +162,78 @@ describe("VaultProtocolHandler", () => {
 		});
 	});
 
+	it("uses configured roots for headless listing, active paths, and Lode search", async () => {
+		await withTempDir(async tempDir => {
+			const root = path.join(tempDir, "vault");
+			await fs.mkdir(path.join(root, "Folder"), { recursive: true });
+			await Bun.write(path.join(root, "Folder", "note.md"), "headless note");
+			const spawnObsidianSpy = vi.fn(async (_bin: string, _args: string[]) => ({
+				stdout: "",
+				stderr: "",
+				exitCode: 0,
+			}));
+			const spawnLodeSpy = vi.fn(async (_bin: string, _args: string[]) => ({
+				stdout: '{"query":"plan","scope":"content","total":1,"results":[]}\n',
+				stderr: "",
+				exitCode: 0,
+			}));
+			const handler = new VaultProtocolHandler({
+				spawnObsidian: spawnObsidianSpy,
+				resolveObsidianBinary: () => null,
+				spawnLode: spawnLodeSpy,
+				resolveLodeBinary: () => "/test/lode",
+				resolveConfiguredRoots: () => new Map([["Work", root]]),
+				resolveConfiguredActive: () => "Work",
+			});
+
+			const listed = await handler.resolve(resourceUrl("vault://"));
+			const active = await handler.resolve(resourceUrl("vault://_/Folder/note.md"));
+			const searched = await handler.resolve(resourceUrl("vault://Work?op=search&q=plan&path=Folder&limit=5"));
+
+			expect(listed.content).toContain("[Work](vault://Work/)");
+			expect(active.content).toBe("headless note");
+			expect(searched.contentType).toBe("application/json");
+			expect(JSON.parse(searched.content)).toMatchObject({ query: "plan", scope: "content" });
+			expect(spawnObsidianSpy).not.toHaveBeenCalled();
+			expect(spawnLodeSpy).toHaveBeenCalledTimes(1);
+			expect(spawnLodeSpy.mock.calls[0][1]).toEqual([
+				"search",
+				"--query=plan",
+				"--content",
+				"--json",
+				`--path=${root}`,
+				`--under=${path.basename(root)}/Folder`,
+				"--limit=5",
+			]);
+		});
+	});
+
+	it("falls back to Obsidian search when a configured root has no Lode CLI", async () => {
+		await withTempDir(async root => {
+			const spawnObsidianSpy = vi.fn(async (_bin: string, _args: string[]) => ({
+				stdout: "obsidian result",
+				stderr: "",
+				exitCode: 0,
+			}));
+			const handler = new VaultProtocolHandler({
+				spawnObsidian: spawnObsidianSpy,
+				resolveObsidianBinary: () => "/test/obsidian",
+				resolveLodeBinary: () => null,
+				resolveConfiguredRoots: () => new Map([["Work", root]]),
+			});
+
+			const searched = await handler.resolve(resourceUrl("vault://Work?op=search&q=plan"));
+
+			expect(searched.content).toBe("obsidian result");
+			expect(spawnObsidianSpy.mock.calls[0][1]).toEqual([
+				"vault=Work",
+				"search:context",
+				"query=plan",
+				"format=json",
+			]);
+		});
+	});
+
 	it("resolves active-vault filesystem paths from obsidian vault info output", async () => {
 		await withTempDir(async tempDir => {
 			const root = path.join(tempDir, "active-vault");

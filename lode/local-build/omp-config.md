@@ -26,6 +26,11 @@ disabledProviders:
 modelRoles:
   # default + advisor, both gateway ids. See omp-local.md and advisor.md.
 symbolPreset: ascii
+vault:
+  enabled: true
+  roots:
+    vault: /home/daelon/vault  # headless filesystem root
+  active: vault               # vault://_/...
 theme:
   dark: titanium
 setupVersion: 1

@@ -4019,6 +4019,27 @@ export const SETTINGS_SCHEMA = {
 				"Enable the vault:// internal URL for reading and editing Obsidian vault content via the Obsidian CLI. When disabled, vault:// resolution is refused and the vault:// entry is omitted from the system prompt.",
 		},
 	},
+	"vault.roots": {
+		type: "record",
+		default: {} as Record<string, string>,
+		ui: {
+			tab: "tools",
+			group: "Available Tools",
+			label: "Vault Roots",
+			description:
+				"Optional vault name to absolute directory mappings. Configured roots keep vault:// file access and headless search available while Obsidian is closed.",
+		},
+	},
+	"vault.active": {
+		type: "string",
+		default: "",
+		ui: {
+			tab: "tools",
+			group: "Available Tools",
+			label: "Active Vault",
+			description: "Configured vault name used by vault://_/ paths while Obsidian is closed.",
+		},
+	},
 
 	"github.enabled": {
 		type: "boolean",

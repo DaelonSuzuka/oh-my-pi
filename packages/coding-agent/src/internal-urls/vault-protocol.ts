@@ -90,6 +90,10 @@ export interface ObsidianSpawnResult {
 export interface VaultProtocolHandlerOptions {
 	spawnObsidian?: typeof spawnObsidian;
 	resolveObsidianBinary?: () => string | null;
+	spawnLode?: typeof spawnLode;
+	resolveLodeBinary?: () => string | null;
+	resolveConfiguredRoots?: () => Map<string, string>;
+	resolveConfiguredActive?: () => string | undefined;
 }
 
 interface CliInvocation {
@@ -105,6 +109,7 @@ interface VaultCounts {
 
 let cachedObsidianBinary: string | null | undefined;
 let binaryOverrideForTests: string | null | undefined;
+let cachedLodeBinary: string | null | undefined;
 let cachedVaultDirectory: Map<string, string> | undefined;
 let cachedActiveVaultPath: string | undefined;
 const cachedVaultInfo = new Map<string, string>();
@@ -239,17 +244,14 @@ export function parseVaultUrl(input: string | InternalUrl): ParsedVaultUrl {
 	return { kind: "fs-file", url: url.href, ref, relativePath, params };
 }
 
-function abortError(): Error {
-	return new Error("obsidian command cancelled");
-}
-
-export async function spawnObsidian(
+async function spawnCommand(
+	command: string,
 	bin: string,
 	args: string[],
 	signal?: AbortSignal,
 	timeoutMs = DEFAULT_OBSIDIAN_TIMEOUT_MS,
 ): Promise<ObsidianSpawnResult> {
-	if (signal?.aborted) throw abortError();
+	if (signal?.aborted) throw new Error(`${command} command cancelled`);
 
 	const proc = Bun.spawn({
 		cmd: [bin, ...args],
@@ -263,13 +265,13 @@ export async function spawnObsidian(
 
 	const abortHandler = (): void => {
 		proc.kill();
-		aborted.reject(abortError());
+		aborted.reject(new Error(`${command} command cancelled`));
 	};
 	if (signal) signal.addEventListener("abort", abortHandler, { once: true });
 
 	const timeout = setTimeout(() => {
 		proc.kill();
-		timedOut.reject(new Error(`obsidian command timed out after ${timeoutMs}ms`));
+		timedOut.reject(new Error(`${command} command timed out after ${timeoutMs}ms`));
 	}, timeoutMs);
 
 	const completed = proc.exited.then(async exitCode => ({
@@ -284,6 +286,24 @@ export async function spawnObsidian(
 		clearTimeout(timeout);
 		if (signal) signal.removeEventListener("abort", abortHandler);
 	}
+}
+
+export async function spawnObsidian(
+	bin: string,
+	args: string[],
+	signal?: AbortSignal,
+	timeoutMs = DEFAULT_OBSIDIAN_TIMEOUT_MS,
+): Promise<ObsidianSpawnResult> {
+	return spawnCommand("obsidian", bin, args, signal, timeoutMs);
+}
+
+export async function spawnLode(
+	bin: string,
+	args: string[],
+	signal?: AbortSignal,
+	timeoutMs = DEFAULT_OBSIDIAN_TIMEOUT_MS,
+): Promise<ObsidianSpawnResult> {
+	return spawnCommand("lode", bin, args, signal, timeoutMs);
 }
 
 export function resolveObsidianBinary(): string | null {
@@ -304,6 +324,40 @@ export function resolveObsidianBinary(): string | null {
 	cachedObsidianBinary = null;
 	return cachedObsidianBinary;
 }
+export function resolveLodeBinary(): string | null {
+	if (cachedLodeBinary !== undefined) return cachedLodeBinary;
+	cachedLodeBinary = $which("lode");
+	return cachedLodeBinary;
+}
+
+export function configuredVaultRoots(): Map<string, string> {
+	let configured = getDefault("vault.roots");
+	if (isSettingsInitialized()) {
+		try {
+			configured = settings.get("vault.roots");
+		} catch {
+			// Keep schema defaults during shutdown or settings reload races.
+		}
+	}
+	const roots = new Map<string, string>();
+	for (const [name, root] of Object.entries(configured)) {
+		if (!name || typeof root !== "string" || !path.isAbsolute(root)) continue;
+		roots.set(name, path.resolve(root));
+	}
+	return roots;
+}
+
+export function configuredActiveVault(): string | undefined {
+	let active = getDefault("vault.active");
+	if (isSettingsInitialized()) {
+		try {
+			active = settings.get("vault.active");
+		} catch {
+			// Keep schema defaults during shutdown or settings reload races.
+		}
+	}
+	return active || undefined;
+}
 
 /**
  * Whether the `vault://` protocol is enabled in the active settings profile.
@@ -323,7 +377,7 @@ export function isVaultEnabled(): boolean {
 }
 
 export function hasObsidian(): boolean {
-	return isVaultEnabled() && resolveObsidianBinary() !== null;
+	return isVaultEnabled() && (configuredVaultRoots().size > 0 || resolveObsidianBinary() !== null);
 }
 
 const VAULT_DISABLED_MESSAGE =
@@ -347,6 +401,12 @@ function requireObsidianBinary(resolveBinary: () => string | null): string {
 	const bin = resolveBinary();
 	if (bin) return bin;
 	throw missingBinaryError();
+}
+
+function requireLodeBinary(resolveBinary: () => string | null): string {
+	const bin = resolveBinary();
+	if (bin) return bin;
+	throw new Error("Headless vault search requires the 'lode' CLI on PATH.");
 }
 
 function cliReportedError(result: ObsidianSpawnResult): string | undefined {
@@ -649,15 +709,24 @@ export class VaultProtocolHandler implements ProtocolHandler {
 
 	readonly #spawnObsidian: typeof spawnObsidian;
 	readonly #resolveObsidianBinary: () => string | null;
+	readonly #spawnLode: typeof spawnLode;
+	readonly #resolveLodeBinary: () => string | null;
+	readonly #resolveConfiguredRoots: () => Map<string, string>;
+	readonly #resolveConfiguredActive: () => string | undefined;
 
 	constructor(options: VaultProtocolHandlerOptions = {}) {
 		this.#spawnObsidian = options.spawnObsidian ?? spawnObsidian;
 		this.#resolveObsidianBinary = options.resolveObsidianBinary ?? resolveObsidianBinary;
+		this.#spawnLode = options.spawnLode ?? spawnLode;
+		this.#resolveLodeBinary = options.resolveLodeBinary ?? resolveLodeBinary;
+		this.#resolveConfiguredRoots = options.resolveConfiguredRoots ?? configuredVaultRoots;
+		this.#resolveConfiguredActive = options.resolveConfiguredActive ?? configuredActiveVault;
 	}
 
 	static resetForTests(): void {
 		cachedObsidianBinary = undefined;
 		binaryOverrideForTests = undefined;
+		cachedLodeBinary = undefined;
 		cachedVaultDirectory = undefined;
 		cachedActiveVaultPath = undefined;
 		cachedVaultInfo.clear();
@@ -701,7 +770,16 @@ export class VaultProtocolHandler implements ProtocolHandler {
 			case "fs-file":
 				return this.#readFile(parsed, context);
 			case "file-op":
+				return this.#runCli(parsed, context);
 			case "vault-op":
+				if (
+					parsed.op === "search" &&
+					parsed.params.case === undefined &&
+					this.#configuredRoot(parsed.ref) &&
+					this.#resolveLodeBinary()
+				) {
+					return this.#runHeadlessSearch(parsed, context);
+				}
 				return this.#runCli(parsed, context);
 		}
 	}
@@ -720,8 +798,22 @@ export class VaultProtocolHandler implements ProtocolHandler {
 		return this.#spawnObsidian(bin, args, context?.signal, DEFAULT_OBSIDIAN_TIMEOUT_MS);
 	}
 
+	#configuredRoot(ref: VaultReference): string | undefined {
+		const roots = this.#resolveConfiguredRoots();
+		if (ref.active) {
+			const active = this.#resolveConfiguredActive();
+			return active ? roots.get(active) : undefined;
+		}
+		return ref.vault ? roots.get(ref.vault) : undefined;
+	}
+
 	async #loadVaultDirectory(context?: ResolveContext | WriteContext): Promise<Map<string, string>> {
 		if (cachedVaultDirectory) return cachedVaultDirectory;
+		const configured = this.#resolveConfiguredRoots();
+		if (configured.size > 0) {
+			cachedVaultDirectory = new Map(configured);
+			return cachedVaultDirectory;
+		}
 		const result = await this.#spawn(["vaults", "verbose"], context);
 		assertCliSuccess("vaults", result);
 		cachedVaultDirectory = parseVaultDirectory(result.stdout);
@@ -731,6 +823,11 @@ export class VaultProtocolHandler implements ProtocolHandler {
 	async #resolveVaultRoot(ref: VaultReference, context?: ResolveContext | WriteContext): Promise<string> {
 		const cached = getCachedVaultRoot(ref);
 		if (cached) return cached;
+		const configured = this.#configuredRoot(ref);
+		if (configured) {
+			cachedActiveVaultPath = ref.active ? path.resolve(configured) : cachedActiveVaultPath;
+			return path.resolve(configured);
+		}
 
 		if (ref.active) {
 			const result = await this.#spawn(["vault", "info", "path"], context);
@@ -784,9 +881,10 @@ export class VaultProtocolHandler implements ProtocolHandler {
 		context?: ResolveContext,
 	): Promise<InternalResource> {
 		const root = await this.#resolveVaultRoot(parsed.ref, context);
+		const configured = this.#configuredRoot(parsed.ref) !== undefined;
 		const cacheKey = parsed.ref.active ? "_" : (parsed.ref.vault ?? "_");
-		let cliInfo = cachedVaultInfo.get(cacheKey);
-		if (cliInfo === undefined) {
+		let cliInfo = configured ? "configured filesystem root" : cachedVaultInfo.get(cacheKey);
+		if (!configured && cliInfo === undefined) {
 			const result = await this.#spawn([...this.#vaultCliArg(parsed.ref), "vault", "info"], context);
 			assertCliSuccess("vault info", result);
 			cliInfo = result.stdout.trim();
@@ -919,6 +1017,32 @@ export class VaultProtocolHandler implements ProtocolHandler {
 			ensureWithinRoot(realParent, root);
 		}
 		await Bun.write(targetPath, content);
+	}
+
+	async #runHeadlessSearch(
+		parsed: Extract<ParsedVaultUrl, { kind: "vault-op" }>,
+		context?: ResolveContext,
+	): Promise<InternalResource> {
+		const root = await this.#resolveVaultRoot(parsed.ref, context);
+		const query = requireParam(parsed.params, "q", "search");
+		const args = ["search", `--query=${query}`, "--content", "--json", `--path=${root}`];
+		const pathFilter = validateQueryPath(parsed.params, "path");
+		if (pathFilter) {
+			const projectRelative = path.relative(path.dirname(root), path.resolve(root, pathFilter));
+			args.push(`--under=${projectRelative}`);
+		}
+		const limit = paramString(parsed.params, "limit");
+		if (limit) args.push(`--limit=${limit}`);
+		const bin = requireLodeBinary(this.#resolveLodeBinary);
+		const result = await this.#spawnLode(bin, args, context?.signal, DEFAULT_OBSIDIAN_TIMEOUT_MS);
+		assertCliSuccess("search", result);
+		return {
+			url: parsed.url,
+			content: result.stdout,
+			contentType: "application/json",
+			size: Buffer.byteLength(result.stdout, "utf-8"),
+			immutable: true,
+		};
 	}
 
 	async #runCli(
