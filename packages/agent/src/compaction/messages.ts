@@ -10,9 +10,11 @@ import { prompt } from "@oh-my-pi/pi-utils";
 import type { AgentMessage } from "../types";
 import branchSummaryContextPrompt from "./prompts/branch-summary-context.md" with { type: "text" };
 import compactionSummaryContextPrompt from "./prompts/compaction-summary-context.md" with { type: "text" };
+import harnessNoticePrompt from "./prompts/harness-notice.md" with { type: "text" };
 
 const COMPACTION_SUMMARY_TEMPLATE = compactionSummaryContextPrompt;
 const BRANCH_SUMMARY_TEMPLATE = branchSummaryContextPrompt;
+const HARNESS_NOTICE_TEMPLATE = harnessNoticePrompt;
 
 export interface CustomMessage<T = unknown> {
 	role: "custom";
@@ -154,6 +156,49 @@ function isCoreCompactionMessage(message: AgentMessage): message is AgentMessage
 }
 
 /**
+ * LOCAL BUILD: mark harness-originated custom/hook messages as not-user.
+ *
+ * These convert to `role: "developer"`, and the Anthropic wire builder pushes
+ * developer turns as `{role: "user"}` (`anthropic.ts`). It promotes them back to
+ * a mid-conversation `system` param, but only when the model is on the official
+ * `api.anthropic.com` host AND the turn follows a user message AND is last or
+ * immediately before an assistant. Two consequences upstream missed:
+ *
+ * - Any gateway (ours included) fails the host check, so no developer message is
+ *   ever promoted and every one arrives as unmarked user input.
+ * - A supervised-process exit notification lands after an *assistant* turn by
+ *   definition, so it fails `followsUser` and is unpromotable even first-party.
+ *
+ * `attribution` already distinguishes the two cases and rides all the way here,
+ * then goes unread by every provider. Messages the user really did author
+ * (`collab-prompt`, user-invoked skill prompts) set `attribution: "user"` and are
+ * intercepted before this path; undefined means machine-originated, matching
+ * `normalizeCustomMessageAttribution`.
+ *
+ * The envelope must stay a pure function of the message — never its position —
+ * or a cached prefix gets rewritten and the provider prompt cache busts from
+ * that message onward. See `wrapSteeringForModel`, which learned this the hard
+ * way.
+ */
+function wrapHarnessNotice(
+	customType: string,
+	content: string | (TextContent | ImageContent)[],
+): (TextContent | ImageContent)[] {
+	const blocks = typeof content === "string" ? [{ type: "text" as const, text: content }] : content;
+	const text = blocks
+		.filter((block): block is TextContent => block.type === "text")
+		.map(block => block.text)
+		.join("\n");
+	// An empty notice would be pure overhead, and a text-free image payload keeps
+	// whatever framing its own converter gave it.
+	if (text.trim().length === 0) return blocks;
+	return [
+		{ type: "text" as const, text: prompt.render(HARNESS_NOTICE_TEMPLATE, { customType, message: text }) },
+		...blocks.filter((block): block is ImageContent => block.type === "image"),
+	];
+}
+
+/**
  * Transform a single core-domain agent message to its LLM form; `undefined`
  * drops it from the provider request.
  *
@@ -169,9 +214,11 @@ export function convertMessageToLlm(message: AgentMessage): Message | undefined 
 			case "custom":
 			case "hookMessage": {
 				const content =
-					typeof message.content === "string"
-						? [{ type: "text" as const, text: message.content }]
-						: message.content;
+					message.attribution === "user"
+						? typeof message.content === "string"
+							? [{ type: "text" as const, text: message.content }]
+							: message.content
+						: wrapHarnessNotice(message.customType, message.content);
 				return {
 					role: "developer",
 					content,

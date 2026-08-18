@@ -1,8 +1,8 @@
 # Rebase Checklist
 
 Upstream `oh-my-pi` is active (v17.2.12 at fork point, frequent releases). The
-telemetry patches are five small edits across three files and are easy to lose
-silently. Run this after every `git pull` / rebase onto upstream.
+local patches are easy to lose silently in a conflict resolution that takes
+upstream's side. Run this after every `git pull` / rebase onto upstream.
 
 > **Run every check in a freshly launched process.** `settings.ts` has no file
 > watcher and there is no `/reload` for settings, so a running omp holds the
@@ -10,6 +10,14 @@ silently. Run this after every `git pull` / rebase onto upstream.
 > `/advisor` off/on — that rebuild re-resolves from the same stale object. A check
 > that fails against a long-running process tells you nothing. Same for hooks under
 > `~/.omp/agent/hooks/pre/`: loaded per process.
+
+> **Redirect stdin from `/dev/null` for anything that spawns omp.** `-p` blocks in
+> `readPipedInput` until stdin reaches EOF. This is not only about direct `omp -p`
+> calls: the coding-agent **test suite** spawns them, so `bun test
+> packages/coding-agent/test/` launched detached (no controlling terminal, stdin
+> never closing) hangs indefinitely and prints `Still starting after Ns — phase:
+> readPipedInput` forever. The same command run in the foreground completes. Append
+> `< /dev/null` to the test command, not just to the probes in §5.
 
 ## 1. The two hard returns still return
 
@@ -42,13 +50,23 @@ strips comments, and it reorders keys — never append to that file blindly, or 
 list item can land after a scalar key and produce invalid YAML that omp
 quarantines to `config.yml.broken-*`. Prefer `omp config set`.
 
-Also confirm the disable list survived a wizard run — it covers 68 ids: 64 model
-providers, 3 implicit local engines, plus the `claude` and `opencode` **discovery**
-providers (`opencode` is in both namespaces).
+Also confirm the disable list survived a wizard run. It spans two kinds of id
+sharing one namespace: the bundled **model** providers plus the implicit local
+engines, and the foreign **discovery** providers that import config from other
+agents' installs. The discovery ids are the ones that can silently reintroduce a
+public model route, and they are a short fixed set, so check them by name:
 
 ```bash
-omp config get disabledProviders --json | python3 -c "import sys,json;v=json.load(sys.stdin)['value'];print(len(v));print([k for k in ('claude','opencode','anthropic') if k in v])"
+omp config get disabledProviders --json | python3 -c "
+import sys,json
+have=set(json.load(sys.stdin)['value'])
+disco={'claude','claude-plugins','codex','cursor','gemini','github','opencode'}
+print('missing discovery ids:', sorted(disco-have) or 'none')"
 ```
+
+`opencode` and `gemini` exist in both namespaces. The model-provider side is not
+worth counting — §5 proves the outcome directly by showing which providers
+actually route, and a new upstream provider shows up there as a new table row.
 
 ## 3. No new outbound paths appeared
 
@@ -97,10 +115,10 @@ grep -rn "telemetry:" packages/coding-agent/src/main.ts
 bun packages/coding-agent/src/cli.ts models
 ```
 
-Expect 24 models under `genai-claude` (13) and `genai-gemini` (11), and **no
-other providers**. A schema error degrades to a warning and silently disables
-custom providers, so absence of the table is the failure signal, not an error
-exit.
+Expect `genai-claude` and `genai-gemini`, and **no other providers**. A schema
+error degrades to a warning and silently disables custom providers, so absence of
+the table is the failure signal, not an error exit — check that models are listed
+at all before checking which.
 
 Then confirm both wire protocols still work. **Redirect stdin** — `-p` blocks in
 `readPipedInput` until stdin reaches EOF, so from a script it hangs forever with
@@ -125,26 +143,32 @@ for the new version — or build from source once bazelisk is available.
 `npm.apple.com` mirror (identical integrity hashes). Always
 `git checkout -- bun.lock` before committing.
 
-## 8. The 18 skipped tests are still skipped, and still the right 18
+## 8. Every skip is still a local-build skip
 
 Upstream may add tests for the push path, stencil.so enrichment, or the removed
 prompt prose, which will fail rather than conflict — a new red test is the signal
-to skip it and note it in `omp-local.md`.
+to skip it and mark it.
+
+Every `.skip` we introduced carries a `LOCAL BUILD` comment naming which change
+made it fail, so the check is that the two sets match: no marked skip has lost
+its marker, and no unmarked skip has appeared.
 
 ```bash
 grep -rn "LOCAL BUILD" packages/*/test/ packages/*/test/**/ 2>/dev/null
+grep -rn "\.skip(" packages/*/test/ packages/*/test/**/ 2>/dev/null
 ```
 
-Expect 5 files: `report-tool-issue.test.ts` (10 cases),
-`litellm-provider.test.ts` (4), `siliconflow-provider.test.ts` (2),
-`issue-6563-repro.test.ts` (1), `system-prompt-inventory.test.ts` (1).
+They cluster in the push path (`report-tool-issue`), the two OpenAI-compat
+catalog providers plus `issue-6563-repro` (all reaching `fetchWellKnownModels`),
+`system-prompt-inventory` (asserts the removed prose), and `advisor` (asserts a
+`nit` is forwarded, which the severity floor now drops).
 
 Conversely, if upstream *removes* the push path itself, the skips become
 unnecessary — unskip rather than carrying them forever.
 
-Catalog package baseline is 558 pass / 1 fail on clean upstream. The 1 failure
-is environmental (a fixture cannot bind `127.0.0.1` in this sandbox), not a
-regression. With the local-build changes: 551 pass / 7 skip / 1 fail.
+One catalog test fails on **clean upstream** too: a fixture cannot bind
+`127.0.0.1` in this sandbox. That is environmental, not a regression — establish
+the baseline on `main` before blaming a local change.
 
 ## 9. The system prompt is still partitioned
 
@@ -222,8 +246,37 @@ grep -cE '"message":"MCP' "$(ls -t ~/.omp/logs/omp.*.log | head -1)"   # expect 
 If a new native provider id appears upstream, add it to the set — otherwise
 legitimately native servers get dropped silently.
 
-## 12. Discard the lockfile churn
+## 12. Harness messages still arrive marked
 
-`bun install` rewrites every `bun.lock` resolution URL to the internal
-`npm.apple.com` mirror (identical integrity hashes). Always
-`git checkout -- bun.lock` before committing.
+`convertMessageToLlm` wraps agent-attributed custom/hook messages in the
+`<system-notice>` envelope from `prompts/harness-notice.md`. Without it, harness
+output reaches the model as unmarked `role: "user"` text and gets answered as if
+the operator had spoken. Full mechanism in [harness-notice.md](harness-notice.md).
+
+```bash
+grep -n "wrapHarnessNotice" packages/agent/src/compaction/messages.ts
+ls packages/agent/src/compaction/prompts/harness-notice.md
+bun test packages/agent/test/harness-notice.test.ts
+```
+
+Two upstream changes would silently undo this:
+
+- A rewrite of the `custom`/`hookMessage` case in `convertMessageToLlm` that drops
+  the `attribution` branch. The conversion is shared with compaction, so a rebase
+  conflict there is plausible.
+- Relaxing `supportsMidConversationSystem` in `catalog/src/compat/anthropic.ts` to
+  cover non-official endpoints. That would double-mark — the envelope *and* a
+  `system` param. Harmless but redundant, and the envelope is the one to keep,
+  since the promotion still cannot reach async notifications.
+
+Verify against the real thing rather than the source, in a fresh process:
+
+```bash
+cd /tmp && omp -p 'Does the exact literal string `<system-notice type="clock">` appear anywhere in your context? Answer only YES or NO.' < /dev/null
+```
+
+Ask for the literal string, not a quotation — models reproduce the payload and
+drop the framing, which looks like a missing envelope and is not one.
+
+If upstream adds its own marker for this class, drop ours rather than stacking
+them.

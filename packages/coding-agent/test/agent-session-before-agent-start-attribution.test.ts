@@ -84,10 +84,14 @@ describe("AgentSession before_agent_start attribution fallback", () => {
 	}
 
 	function findBeforeStartInjectionLlm(messages: Message[]): Message | undefined {
+		// LOCAL BUILD: agent-attributed custom messages are wrapped in a
+		// `<system-notice>` envelope by `convertMessageToLlm`, so the injected text
+		// is a substring of the converted block rather than the whole of it. This is
+		// a locator only — every assertion below is on `attribution`.
 		return messages.find(message => {
 			if (message.role === "assistant") return false;
-			if (typeof message.content === "string") return message.content === injectedText;
-			return message.content.some(block => block.type === "text" && block.text === injectedText);
+			if (typeof message.content === "string") return message.content.includes(injectedText);
+			return message.content.some(block => block.type === "text" && block.text.includes(injectedText));
 		});
 	}
 
