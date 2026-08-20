@@ -125,6 +125,14 @@ the background flush, the `PI_AUTO_QA_PUSH=1` headless override, and the explici
 
 ## Provider configuration
 
+> **Scope:** The genai-bridge gateway, the 24-model set, and the
+> `disabledProviders` list below are the **work laptop (mbp2)** configuration,
+> verified there. They are not universal — other machines (e.g. DAEDALUS) run
+> the same fork with different providers in `~/.omp/agent/models.yml` and
+> `config.yml`. The source edits documented elsewhere in this file
+> (telemetry removal, MCP import restriction, system prompt partition) are
+> machine-independent; the provider config is per-host.
+
 | Provider | `api` | `baseUrl` |
 |---|---|---|
 | `genai-claude` | `anthropic-messages` | `http://localhost:11211/api/anthropic` |
