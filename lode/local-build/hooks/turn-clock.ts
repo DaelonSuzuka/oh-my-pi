@@ -45,7 +45,7 @@ export default function hook(pi: HookAPI): void {
 	pi.on("before_agent_start", async () => ({
 		message: {
 			customType: "clock",
-			content: `Turn started: ${stamp(new Date())} (local). The date in the system prompt is fixed at session start and may be stale; prefer this.`,
+			content: `Turn started: ${stamp(new Date())} (local).`,
 			display: false,
 			attribution: "agent" as const,
 		},

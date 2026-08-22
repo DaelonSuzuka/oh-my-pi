@@ -1,5 +1,10 @@
 # Summary
 
+> **Machine scope:** This lode documents the work machine's `local-build`
+> branch. On mbp2 the fork is applied from the same branch but config differs:
+> ollama-cloud provider, no genai-bridge, no advisor. See
+> `~/projects/lode/tmp/active.md` on mbp2 for that machine's state.
+
 `local-build` is a personal fork of `oh-my-pi` (`omp`, a coding agent) that
 removes all outbound reporting. Unlike the parallel opencode fork, the provider
 side needs no code changes: omp supports custom providers as first-class config

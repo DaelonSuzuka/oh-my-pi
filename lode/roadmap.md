@@ -64,3 +64,18 @@ Accepted consequences of stopping here:
 this install does not use, so it is inert rather than harmful — but the file
 exists and a future upstream consumer would pick it up automatically. Options:
 leave it, or stub `getInstallId()` to a fixed value.
+
+
+## Measure advisor dispatch overhead on ollama-cloud
+
+**Constraint it answers:** raw ollama-cloud API latency for small models is
+sub-100ms (gpt-oss:20b: ~87ms, gemma4:31b: ~65ms on mbp2), but `omp -p` adds
+3–4s of harness overhead. The advisor dispatches in-process, not via `-p`, so
+its overhead should be much lower — but it has not been measured. If the
+in-process dispatch-to-response is under ~500ms, ollama-cloud small models
+become viable advisor candidates for mbp2 (where the advisor is currently
+disabled).
+
+See `local-build/advisor.md` → "ollama-cloud latency" section for the raw
+numbers. Next step: enable the advisor with `gpt-oss:20b` and time actual
+`onTurnEnd` → advisory delivery.

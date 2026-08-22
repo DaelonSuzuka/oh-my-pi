@@ -347,3 +347,84 @@ failures from whichever model was configured at *their* launch — the
 `400 unknown field "id"` from `gemini-3.1-flash-lite` and the role-collapse from
 `gemini-2.5-flash` — both already fixed on disk.
 
+## ollama-cloud latency: raw API vs omp -p harness overhead
+
+Benchmarked on mbp2 (i7-4750HQ, no local inference). The question: can
+ollama-cloud's smallest models match the ~1s advisor latency the work machine
+gets from Haiku / Gemini Flash via genai-bridge?
+
+### Catalog reality: the small models are gone
+
+`omp models` lists 46 ollama-cloud models, but the five smallest (3B–12B) were
+all retired between 2026-06-30 and 2026-07-15. The catalog is stale — it still
+shows them, but the API returns HTTP 410.
+
+| Retired model | Params | Retired date |
+|---|---|---|
+| rnj-1:8b | 8B | 2026-06-30 |
+| ministral-3:3b | 3B | 2026-07-15 |
+| gemma3:4b | 4B | 2026-07-15 |
+| ministral-3:8b | 8B | 2026-07-15 |
+| gemma3:12b | 12B | 2026-07-15 |
+| ministral-3:14b | 14B | 2026-07-15 |
+| gemma3:27b | 27B | 2026-07-15 |
+| devstral-small-2:24b | 24B | (retired) |
+
+Smallest **available** model: `gpt-oss:20b`.
+
+### Raw API latency (bypassing omp)
+
+Direct `curl` to `localhost:11434/api/generate`, `stream:false`, trivial prompts.
+Five runs each, different prompt per run (no caching):
+
+| Model | Runs (s) | Median |
+|---|---|---|
+| gemma4:31b | 0.058 / 0.060 / 0.065 / 0.069 / 0.096 | **0.065s** |
+| gpt-oss:20b | 0.099 / 0.093 / 0.087 / 0.080 / 0.061 | **0.087s** |
+| glm-5.2:cloud | 1.81 (single run) | ~1.8s |
+
+Sub-100ms for the 20–31B tier. This is faster than Haiku/Flash via genai-bridge
+on the work machine (~1s). The inference provider is not the bottleneck.
+
+### omp -p harness overhead
+
+Same models, same trivial prompts, through `omp -p --no-tools --no-session`:
+
+| Model | Avg omp -p (s) | Avg raw API (s) | Overhead |
+|---|---|---|---|
+| gemma4:31b | 3.34 | 0.065 | **~3.3s** |
+| gpt-oss:20b | 4.33 | 0.087 | **~4.2s** |
+| glm-5.2 | 4.03 | 1.81 | ~2.2s |
+
+omp's `-p` mode adds 3–4 seconds of harness overhead — system prompt assembly,
+session setup, output processing. This dwarfs the inference time for small
+models and makes omp -p useless for advisor latency measurement.
+
+### Full benchmark: 7 working models, 5 tasks (echo + simple reasoning)
+
+Via `omp -p --no-tools --no-session`. All models answered all 5 tasks correctly.
+
+| Model | Params | Avg wall (s) | Min | Max | Correct |
+|---|---|---|---|---|---|
+| gemma4:31b | 31B | 3.34 | 3.07 | 3.82 | 5/5 |
+| deepseek-v4-flash | — | 3.96 | 3.59 | 4.32 | 5/5 |
+| glm-5.2 | 756B | 4.03 | 3.39 | 4.94 | 5/5 |
+| nemotron-3-nano:30b | 30B | 4.21 | 3.69 | 4.48 | 5/5 |
+| gpt-oss:120b | 120B | 4.46 | 3.82 | 5.14 | 5/5 |
+| gpt-oss:20b | 20B | 4.33 | 3.76 | 5.06 | 5/5 |
+| glm-5.1 | 756B | 4.85 | 4.21 | 6.51 | 5/5 |
+
+Model choice barely matters for speed through omp -p — everything clusters at
+3–5s because the overhead dominates.
+
+### Open question: advisor dispatch overhead
+
+The advisor dispatches in-process (not via `omp -p`), so its overhead should be
+much lower than the 3–4s measured here. The advisor's `onTurnEnd` → model call
+path skips session setup and most prompt assembly. Measuring the advisor's
+actual dispatch-to-response latency on ollama-cloud models is the next step —
+the raw API numbers suggest `gpt-oss:20b` or `gemma4:31b` could be viable
+advisor models if the in-process overhead is under ~500ms.
+
+Scripts: `lode/tmp/bench-cloud2.sh` (omp -p benchmark), raw curl timing inline.
+Machine: mbp2, 2026-08-10.
