@@ -9,3 +9,4 @@
 - [ ] Evaluate managed/autolearn skills for recurring Lode and project workflows
 - [ ] Check whether image generation still exists and identify any real development use
 - [ ] Evaluate computer-use tooling for bounded desktop operations when native APIs are unavailable
+- [ ] Investigate intermittent "Failed to parse JSONL" errors that interrupt the session and require user nudging to resume; check session JSONL for truncated/split frames and the parser's error recovery path
