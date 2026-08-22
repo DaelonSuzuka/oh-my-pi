@@ -35,9 +35,17 @@
  * Fork and handoff deliberately fall through: both begin with inherited content,
  * so the emptiness guard skips them. A forked conversation already has the lode
  * from its parent.
+ *
+ * ── lode startup vs manual reads ────────────────────────────────────────────
+ *
+ * The hook shells out to `lode startup` when the CLI is available, so the file
+ * list, budget, and formatting stay owned by the CLI rather than drifting in
+ * the hook. The manual file-reading path remains as a fallback for machines
+ * where `lode` is not installed.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 import type { HookAPI, HookContext } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 
 /**
@@ -46,6 +54,7 @@ import type { HookAPI, HookContext } from "@oh-my-pi/pi-coding-agent/extensibili
  * decide how the *first* sentence of a conversation is read. Injecting them is
  * what makes "add a disentangler to the frombulation engine" parse instead of
  * being guessed at. `active.md` is state rather than vocabulary, so it is last.
+ * Used only by the fallback path; `lode startup` owns its own list.
  */
 const FILES = ["lode/summary.md", "lode/terminology.md", "lode/lode-map.md", "lode/tmp/active.md"];
 
@@ -55,6 +64,7 @@ const FILES = ["lode/summary.md", "lode/terminology.md", "lode/lode-map.md", "lo
  * chars. The shell original's 6000 came from Claude Code spooling an oversized
  * `additionalContext` to a file rather than injecting it; omp has no such cap.
  * At 6000, gantry's 6144-char `active.md` was silently omitted.
+ * Used only by the fallback path.
  */
 const BUDGET = 40000;
 
@@ -81,9 +91,33 @@ function isFreshConversation(ctx: HookContext): boolean {
 	return true;
 }
 
+/**
+ * Try `lode startup`; if the CLI is unavailable, fall back to reading the
+ * known entry files directly. Either path returns the content to inject
+ * and a status line for the log.
+ */
 function buildPayload(cwd: string): { content: string; status: string } | undefined {
 	if (!fs.existsSync(path.join(cwd, "lode"))) return undefined;
 
+	// Preferred: shell out to the CLI so the file list and format stay
+	// owned by `lode startup` rather than duplicated here.
+	try {
+		const out = execSync("lode startup", {
+			cwd,
+			encoding: "utf8",
+			timeout: 5000,
+			stderr: "pipe",
+		});
+		const chars = Buffer.byteLength(out, "utf8");
+		return {
+			content: `${PREFIX}\n${out}`,
+			status: `lode: startup, ${chars} chars`,
+		};
+	} catch {
+		// lode not installed or failed — fall through to manual reads.
+	}
+
+	// Fallback: read the entry files directly.
 	const sections: string[] = [];
 	const omitted: Array<{ file: string; chars: number }> = [];
 	let found = 0;
@@ -120,7 +154,7 @@ function buildPayload(cwd: string): { content: string; status: string } | undefi
 	const status =
 		omitted.length > 0
 			? `lode: ${sections.length}/${found} files, ${used} chars — omitted ${names} (read them)`
-			: `lode: ${sections.length} file${sections.length === 1 ? "" : "s"}, ${used} chars`;
+			: `lode: ${sections.length} file${sections.length === 1 ? "" : "s"}, ${used} chars (fallback — lode CLI not found)`;
 
 	return { content, status };
 }
