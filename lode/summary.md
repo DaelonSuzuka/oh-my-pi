@@ -24,7 +24,7 @@ toolchain.
 > **Per-machine provider config:** the genai-bridge gateway
 > (`localhost:11211`, two keyless `genai-claude` / `genai-gemini` providers, 24
 > models, all built-ins and discovery providers disabled in `config.yml`) is
-> the **work laptop (mbp2)** configuration, verified there. Other machines run
+> the **work Mac** configuration, verified there. Other machines run
 > the same fork with different providers in `models.yml` / `config.yml`. The
 > machine-independent parts of the fork are the source edits and the prompt
 > partition; the provider wiring is per-host config.

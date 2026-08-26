@@ -1,5 +1,14 @@
 # Advisor
 
+> **Machine scope:** the advisor configuration, model bake-off, and gate
+> calibration below are the **work Mac**'s — genai-bridge claude+gemini, with
+> `haiku-4-5` as the configured advisor. The "ollama-cloud latency" section at
+> the bottom is a separate **mbp2** benchmark (ollama-cloud models, no
+> genai-bridge), kept here because it answers the same question — can a cheap
+> model match the work Mac's ~1s advisor latency — on a different provider.
+> The two machines are not the same; "gemini" appears on both (work Mac via
+> genai-bridge, mbp2 via ollama-cloud) and does not by itself identify a host.
+
 The advisor subsystem attaches a second model to a session. It receives primary
 transcript deltas *including reasoning*, has its own `Agent` and an isolated
 `ToolSession` (id suffixed `-advisor`), and its only channel into the primary is
